@@ -1,0 +1,38 @@
+.vc-utz-message {
+    cursor: default;
+    unicode-bidi: plaintext;
+}
+
+.vc-utz-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--interactive-normal);
+    cursor: default;
+    white-space: nowrap;
+    margin-left: 4px;
+}
+
+.vc-utz-badge:hover {
+    color: var(--interactive-hover);
+}
+
+.vc-utz-profile-section {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--header-primary);
+    padding: 4px 0;
+    text-align: center;
+}
+
+.vc-utz-settings-user {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 12px;
+    margin-bottom: 4px;
+    background: var(--background-secondary);
+    border-radius: 4px;
+}
