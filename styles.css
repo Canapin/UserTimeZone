@@ -1,6 +1,7 @@
 .vc-utz-message {
     cursor: default;
     unicode-bidi: plaintext;
+    user-select: none;
 }
 
 .vc-utz-badge {
