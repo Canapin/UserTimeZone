@@ -2,114 +2,81 @@
 
 ## Goal
 
-Build a Vencord plugin that lets users set a per-user timezone, displayed as local time on the user's profile (next to their username) and inline on their messages (next to the timestamp).
+Lets users assign a timezone to any Discord user via right-click → **Set Timezone**, then shows
+that user's local time:
+
+- **On messages** — the message's send time, converted to the assigned timezone, inline next to the
+  message (normal + compact display modes). Time only, no timezone suffix.
+- **On profiles** — the user's *current* local time, as a profile badge and a profile section.
+  Optionally suffixed with a timezone abbreviation (e.g. `CEST`).
+
+Timezones are stored **locally** in the plugin settings. Nothing is sent to Discord and no backend
+is required.
 
 ## Architecture
 
-### Overview
+### Storage
 
-The plugin uses **invisible Unicode tag character encoding** in the user's bio (same technique as `FakeProfileThemes`) to share timezone data without a backend. When User A sets "Europe/Berlin", the plugin encodes it as invisible chars and prepends it to A's bio. User B (with the plugin) decodes it and sees A's local time.
+Per-user timezones live in the plugin settings under `userTimezones`, a plain
+`Record<userId, IANA timezone>`:
+
+```ts
+settings.store.userTimezones = { "1549063490650509453": "Europe/Berlin" }
+```
+
+Helpers:
+
+| Function | Purpose |
+|---|---|
+| `getUserTimezone(userId): string \| null` | Read a user's configured timezone |
+| `setUserTimezone(userId, tz \| null)` | Write/clear a user's timezone (reassigns the record) |
+
+There is **no** bio encoding. (An earlier design used invisible Unicode tag characters embedded in
+the user's bio — it was never implemented and has been dropped in favour of local storage.)
 
 ### Files
 
 ```
-src/plugins/userTimeZone/
-├── index.tsx        # Plugin entry: definePlugin, patches, components
+src/userplugins/UserTimeZone/
+├── index.tsx        # Plugin entry: definePlugin, patches, components, context menu
 ├── styles.css       # Styling for message & profile time indicators
-├── README.md        # Documentation + usage instructions
+├── README.md        # User-facing documentation
 └── AGENTS.md        # This file — instructions for AI agents
-```
-
-### Plugin Definition (index.tsx)
-
-```ts
-export default definePlugin({
-    name: "UserTimeZone",
-    description: "Shows each user's local time on their profile and messages via bio-encoded timezone",
-    tags: ["Utility", "Customisation"],
-    authors: [Devs.YourName],
-    patches: [...],
-    settings: definePluginSettings({...}),
-    settingsAboutComponent: SettingsComponent,
-})
 ```
 
 ### Key Functions
 
 | Function | Purpose |
 |---|---|
-| `encode(tz: string): string` | IANA timezone → invisible tag chars |
-| `decode(bio: string): string \| null` | Extract IANA timezone from bio |
-| `getLocalTime(tz: string, use24h: boolean): string` | Format current time in given tz |
-| `getTzAbbreviation(tz: string): string` | Get short TZ name (e.g., "CEST") |
+| `getTzAbbreviation(tz, date?)` | Short TZ name for a given instant (DST-aware), e.g. `CEST` |
+| `formatTime(tz, use24h, showAbbrev)` | Current time in `tz` (profile display), optionally abbreviated |
+| `formatTimestamp(date, tz, use24h)` | Arbitrary instant in `tz`, **time only** (message display) |
+| `getCommonTimezones()` | Timezone options from `Intl.supportedValuesOf("timeZone")` with a curated fallback |
+| `useCurrentTimeFast(tz, use24h, showAbbrev)` | Ticking hook (1 s) for profile "current time" |
 
-### Encoding Scheme (same as FakeProfileThemes)
-
-Uses Unicode tag characters (U+E0000 range). Each ASCII char < 0x7F maps to `char + 0xE0000`.
-The timezone string is wrapped in a marker like `[tz:America/New_York]` before encoding,
-so the decoder can distinguish it from other encoded data in the bio.
-
-```ts
-const MARKER_START = "[tz:";
-const MARKER_END = "]";
-
-function encode(tz: string): string {
-    const msg = MARKER_START + tz + MARKER_END;
-    return Array.from(msg)
-        .map(c => c.codePointAt(0)!)
-        .filter(cp => cp >= 0x20 && cp <= 0x7f)
-        .map(cp => String.fromCodePoint(cp + 0xE0000))
-        .join("");
-}
-
-function decode(bio: string): string | null {
-    if (!bio) return null;
-    const marker = [...MARKER_START].map(c => String.fromCodePoint(c.codePointAt(0)! + 0xE0000)).join("");
-    const end = [...MARKER_END].map(c => String.fromCodePoint(c.codePointAt(0)! + 0xE0000)).join("");
-    const regex = new RegExp(`${marker}([\\uE0000-\\uE007F]+?)${end}`);
-    const match = bio.match(regex);
-    if (!match) return null;
-    return [...match[1]]
-        .map(c => String.fromCodePoint(c.codePointAt(0)! - 0xE0000))
-        .join("");
-}
-```
+`formatTime` / `getTzAbbreviation` are used by profiles; `formatTimestamp` is used by messages.
 
 ### Timezone Data
 
-Use `Intl.supportedValuesOf("timeZone")` when available (modern browsers/Chrome). Fall back to a curated list of ~50 common IANA timezones.
-
-Formatting: use `Intl.DateTimeFormat` with the resolved timezone:
-
-```ts
-function getLocalTime(tz: string, use24h: boolean): string {
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString("en-US", {
-        timeZone: tz,
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: !use24h
-    });
-    return timeStr;
-}
-```
+`getCommonTimezones()` uses `Intl.supportedValuesOf("timeZone")` when available, otherwise a
+curated list of ~60 common IANA timezones. Options are labelled `(ABBR) Region/City` and the `UTC`
+option is marked `default: true`.
 
 ### Settings
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `timezone` | SELECT (from timezone list) | `"UTC"` | Your IANA timezone |
+| `userTimezones` | CUSTOM | `{}` | Internal `Record<userId, timezone>` (managed via the context menu) |
 | `showOnProfile` | BOOLEAN | `true` | Show local time on profiles |
-| `showOnMessages` | BOOLEAN | `true` | Show local time on messages |
+| `showOnMessages` | BOOLEAN | `true` | Show message time on messages |
 | `use24h` | BOOLEAN | `false` | 24-hour time format |
-| `showTzAbbrev` | BOOLEAN | `true` | Show timezone abbreviation (e.g., "CEST") |
+| `showTzAbbrev` | BOOLEAN | `true` | Append the timezone abbreviation **on profiles only** |
 
-### Message Patch
-
-Use the same target as `userMessagesPronouns` and `messageLatency`:
+### Patches
 
 ```ts
 patches: [
+    // Normal message display: insert after the timestamp
     {
         find: "showCommunicationDisabledStyles",
         replacement: {
@@ -117,124 +84,112 @@ patches: [
             replace: "[$1, $self.MessageTimeWrapper(arguments[0])]"
         }
     },
-    // Profile patch - inject timezone near username in profile header
+    // Compact message display: insert after the username
     {
-        find: ".displayName,",
+        find: '="SYSTEM_TAG"',
+        replacement: [{
+            match: /className:\i\(\)\(\i\.className(?:,\i\.\i)?,\i\)\}\)(?:\))?,(?=\i)/g,
+            replace: "$&$self.CompactMessageTimeWrapper(arguments[0]),"
+        }]
+    },
+    // Profile: insert a time section into the profile header
+    {
+        find: "#{intl::USER_PROFILE_PRONOUNS}",
         replacement: {
-            match: /(\i)\.displayName/,
-            replace: "$self.maybeInjectTimezone($1)??$&"
+            match: /(?<=\[)(?=\i," ",\i)/,
+            replace: "$self.ProfileTimeSection({userId:arguments[0]?.user?.id}),"
         }
     }
 ]
 ```
 
-### Profile Display Component
+The two message patches mirror `userMessagesPronouns` / `messageLatency` exactly.
 
-Create a component that shows "🕐 3:42 PM" or "3:42 PM CEST" next to the user's name in the profile modal. Hook into `UserProfileStore` to decode the timezone from the user's bio, similar to `FakeProfileThemes`.
+### Message Display
 
-```ts
-const UserTZBadge: React.FC<{ userId: string; }> = ({ userId }) => {
-    const profile = UserProfileStore.getUserProfile(userId);
-    const tz = profile ? decodeTimezone(profile.bio) : null;
+`MessageTimeComponent` converts the **message's own timestamp** (`message.timestamp`, a `Date`) into
+the assigned timezone. This is what makes the added time relative to the regular chat timestamp.
+
+```tsx
+function MessageTimeComponent({ message }: { message: Message }) {
+    const tz = getUserTimezone(message.author.id);
     if (!tz) return null;
-    const time = getLocalTime(tz, settings.use24h);
-    const abbrev = settings.showTzAbbrev ? ` ${getTzAbbreviation(tz)}` : "";
-    return <span className="vc-utz-profile">🕐 {time}{abbrev}</span>;
-};
+    const time = formatTimestamp(message.timestamp, tz, settings.store.use24h);
+    if (!time) return null;
+    return (
+        <span className={classes(TimestampClasses.timestampInline, TimestampClasses.timestamp, "vc-utz-message")}>
+            {" "}• 🕐 {time}
+        </span>
+    );
+}
 ```
 
-### Message Display Component
+Because message timestamps are immutable, **no interval/ticking is needed** — do not reintroduce
+one per message. Bots/system users and the `showOnMessages` setting are filtered by
+`shouldShowMessage`.
 
-Shows a small inline text like "🕐 3:42 PM" next to the message timestamp. Uses the same CSS classes as the pronouns plugin for proper alignment.
+### Profile Display
 
-```ts
-const TimestampClasses = findCssClassesLazy("timestampInline", "timestamp");
+Profiles show the user's *current* time (not a message timestamp), so they use the ticking hook:
 
-const MessageTimeComponent: React.FC<{ message: Message; }> = ({ message }) => {
-    const tz = decodeTimezoneFromMessage(message);
-    if (!tz) return null;
-    const time = getLocalTime(tz, settings.use24h);
-    return <span className={TimestampClasses.timestamp}> • 🕐 {time}</span>;
-};
-```
+- `ProfileBadgeComponent` — `BadgePosition.END` badge via `addProfileBadge`, with a tooltip.
+- `ProfileTimeSectionWrapper` — inline section injected by the profile patch.
+
+Both use `useCurrentTimeFast` and respect `showOnProfile` / `showTzAbbrev`.
+
+### Context Menu
+
+The `user-context` menu item opens `TimezoneModal`, a `SearchableSelect` over `timezoneOptions`.
+It shows a live preview of the current local time and offers a **Clear** action. Bots are skipped.
 
 ## Development Steps
 
-### 1. Setup
-```bash
-git clone https://github.com/Vendicated/Vencord.git
-cd Vencord
-pnpm install --frozen-lockfile
-```
-
-### 2. Create Plugin
-- Create `src/plugins/userTimeZone/index.tsx`
-- Create `src/plugins/userTimeZone/styles.css`
-- Create `src/plugins/userTimeZone/README.md`
-
-### 3. Implement encode/decode
-- Copy encoding pattern from `src/plugins/fakeProfileThemes/index.tsx`
-- Adapt for timezone strings instead of hex colors
-
-### 4. Implement settings
-- Add timezone selector (use `Intl.supportedValuesOf` or curated list)
-- Add toggle options for profile/message display, 24h format
-
-### 5. Implement patches
-- `UserProfileStore.getUserProfile` patch to decode timezone
-- Message timestamp patch (from Pronouns plugin pattern)
-- Profile header patch to inject timezone element near username
-
-### 6. Implement components
-- Profile timezone badge/indicator
-- Message timezone inline indicator
-- Settings panel component with timezone picker and preview
-
-### 7. Style
-- Add `.vc-utz-profile` and `.vc-utz-message` CSS classes
-- Match Discord's timestamp styling for seamless integration
-
-### 8. Build & Test
-```bash
-pnpm build --dev
-pnpm inject
-```
+1. `pnpm install --frozen-lockfile`
+2. Edit `index.tsx` / `styles.css`
+3. `pnpm build --dev`
+4. `pnpm inject`
 
 ## Key Reference Files
 
 | File | What to learn from |
 |---|---|
-| `src/plugins/fakeProfileThemes/index.tsx` | Bio encoding/decoding, `getUserProfile` hook, settings UI |
-| `src/plugins/friendsSince/index.tsx` | Profile modal patching, Section component |
-| `src/plugins/userMessagesPronouns/index.ts` | Message timestamp inline injection, compact mode |
-| `src/plugins/userMessagesPronouns/PronounsChatComponent.tsx` | Timestamp CSS classes, tooltip usage |
-| `src/plugins/messageLatency/index.tsx` | Message component patching pattern |
-| `src/plugins/replyTimestamp/index.tsx` | Timestamp formatting with DateUtils |
-| `src/utils/types.ts` | `definePlugin`, `OptionType`, `Patch`, `PluginDef` types |
-| `src/api/Settings.ts` | `definePluginSettings` |
+| `src/plugins/userMessagesPronouns/index.ts` | Message patch find/match strings (normal + compact) |
+| `src/plugins/userMessagesPronouns/PronounsChatComponent.tsx` | `timestampInline`/`timestamp` CSS classes, compact-mode handling |
+| `src/plugins/messageLatency/index.tsx` | Message component patching, `ErrorBoundary.wrap` |
+| `src/plugins/replyTimestamp/index.tsx` | Formatting a `message.timestamp` with `DateUtils`/`Timestamp` |
+| `src/api/Badges.ts` | `addProfileBadge`, `ProfileBadge`, `BadgePosition` |
+| `src/api/Settings.ts` | `definePluginSettings`, `OptionType` |
+| `src/utils/types.ts` | `definePlugin`, `PluginDef` |
 
 ## Common Pitfalls
 
-- **Fragile regex patches**: Discord updates frequently. Test patches after each update. Use `noWarn` to silence optional patch warnings.
-- **Bio length limits**: Discord bios have a max length. Keep padding minimal.
-- **Performance**: `Intl.DateTimeFormat` is expensive in a hot loop. Cache formatters per timezone.
-- **Timezones not available**: `Intl.supportedValuesOf` is Chrome 74+/Node 22+. Check availability.
-- **SSR / initial render**: User profiles may not be loaded yet. Use `useStateFromStores` or `useAwaiter`.
-- **Multiple encodings**: If both FakeProfileThemes and UserTimeZone are active, ensure markers are unique (`[tz:...]` vs `[#color,#color]`).
+- **Fragile regex patches**: Discord updates frequently. Re-test all three patches after updates.
+  Use `noWarn` to silence optional-patch warnings.
+- **Message time must derive from `message.timestamp`**, never from `new Date()`. Using the current
+  time makes every message show the same value instead of when it was sent.
+- **No per-message interval**: message time is static; only profiles need a ticking hook.
+- **DST correctness**: pass the relevant `Date` to `getTzAbbreviation` so abbreviations reflect the
+  instant being displayed (e.g. `GMT+8` for a message date vs `CEST` now).
+- **`Intl.supportedValuesOf` availability**: fall back to the curated list.
+- **SSR / initial render**: profiles may not be loaded yet; components are wrapped in
+  `ErrorBoundary` with `{ noop: true }`.
 
 ## Testing
 
-1. Enable the plugin in Vencord settings > Plugins > UserTimeZone
-2. Set your timezone in the plugin settings
-3. Open your own profile — should show "🕐 3:42 PM" near your username
-4. Send a message — should show "🕐 3:42 PM" next to the message timestamp
-5. Ask a friend with the plugin installed to check your profile/messages
-6. Change your timezone in settings and verify it updates everywhere
-7. Toggle 24h format and verify
-8. Disable the plugin and verify everything returns to normal
+1. Enable the plugin in Vencord settings → Plugins → UserTimeZone.
+2. Right-click a user → **Set Timezone** → pick a timezone.
+3. Compare the added message time against the message's own timestamp: it must be that instant
+   converted to the assigned timezone (time only, no `GMT+X`).
+4. Open the user's profile — badge + section show their *current* local time; toggle
+   `showTzAbbrev` and confirm the suffix appears/disappears.
+5. Toggle `use24h`, `showOnMessages`, `showOnProfile`.
+6. Toggle compact message display and confirm the inline time still renders next to the username.
+7. Disable the plugin and confirm everything returns to normal.
 
 ## Technical Notes
 
-- **Why bio encoding instead of server?** No backend needed, zero setup for users, works "virally" like FakeProfileThemes
-- **Why `Intl.DateTimeFormat` vs `moment`?** Vencord already has moment as a dep but `Intl` is native and handles DST correctly
-- **Why tag characters?** They're invisible in Discord's UI, pass through the backend intact, and can be mixed with normal text
+- **Why local storage instead of a server?** No backend needed; the user configures each person
+  once. Trade-off: only the person who set it sees it.
+- **Why `Intl` instead of `moment`?** Native, DST-correct, no dependency.
+- **Why time-only on messages?** The adjacent Discord timestamp already conveys date/context; the
+  added value is the remote clock time, so the suffix was removed for readability.

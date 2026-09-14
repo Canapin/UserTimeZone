@@ -20,15 +20,30 @@ import { Menu, Modal, openModal, React, SearchableSelect, Text, Tooltip, UserSto
 const TimestampClasses = findCssClassesLazy("timestampInline", "timestamp");
 const MessageDisplayCompact = getUserSettingLazy("textAndImages", "messageDisplayCompact")!;
 
-function getTzAbbreviation(tz: string): string {
+function getTzAbbreviation(tz: string, date: Date = new Date()): string {
     try {
         const parts = new Intl.DateTimeFormat("en-US", {
             timeZone: tz,
             timeZoneName: "short"
-        }).formatToParts(new Date());
+        }).formatToParts(date);
         return parts.find(p => p.type === "timeZoneName")?.value ?? tz.split("/").pop() ?? tz;
     } catch {
         return tz.split("/").pop() ?? tz;
+    }
+}
+
+function formatTimestamp(date: Date | string | number, tz: string, use24h: boolean): string | null {
+    try {
+        const d = new Date(date);
+        if (isNaN(d.getTime())) return null;
+        return d.toLocaleTimeString("en-US", {
+            timeZone: tz,
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: !use24h
+        });
+    } catch {
+        return null;
     }
 }
 
@@ -107,7 +122,7 @@ const settings = definePluginSettings({
     },
     showTzAbbrev: {
         type: OptionType.BOOLEAN,
-        description: "Show timezone abbreviation (e.g., CEST)",
+        description: "Show timezone abbreviation on profiles (e.g., CEST)",
         default: true
     }
 });
@@ -121,23 +136,6 @@ function setUserTimezone(userId: string, tz: string | null): void {
     if (tz) tzs[userId] = tz;
     else delete tzs[userId];
     (settings.store as any).userTimezones = tzs;
-}
-
-function useCurrentTime(tz: string | null, use24h: boolean, showAbbrev: boolean): string | null {
-    const [time, setTime] = React.useState<string | null>(null);
-
-    React.useEffect(() => {
-        if (!tz) {
-            setTime(null);
-            return;
-        }
-        const update = () => setTime(formatTime(tz, use24h, showAbbrev));
-        update();
-        const interval = setInterval(update, 30000);
-        return () => clearInterval(interval);
-    }, [tz, use24h, showAbbrev]);
-
-    return time;
 }
 
 function useCurrentTimeFast(tz: string | null, use24h: boolean, showAbbrev: boolean): string | null {
@@ -209,7 +207,8 @@ function shouldShowMessage(message: Message): boolean {
 
 function MessageTimeComponent({ message }: { message: Message }) {
     const tz = getUserTimezone(message.author.id);
-    const time = useCurrentTime(tz, settings.store.use24h, settings.store.showTzAbbrev);
+    if (!tz) return null;
+    const time = formatTimestamp(message.timestamp, tz, settings.store.use24h);
     if (!time) return null;
 
     return (

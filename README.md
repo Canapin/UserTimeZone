@@ -1,15 +1,15 @@
 # UserTimeZone
 
-Set a per-user timezone via right-click → Set Timezone. Shows each user's local time on their profile and messages.
+Set a per-user timezone via right-click → Set Timezone. Shows the local time for each configured user on their messages and profile.
 
 ## Features
 
-- **Right-click** any user → **Set Timezone** to configure
-- Shows current local time **next to the user's username** on profiles
-- Shows current local time **inline next to the message timestamp**
+- **Right-click** any user → **Set Timezone** to configure (or clear) their timezone
+- On messages: shows the **message's send time** converted to that user's timezone, inline next to the message (time only)
+- On profiles: shows that user's **current** local time, as a badge and a profile section
+- Optional timezone abbreviation on profiles (CEST, EST, etc.)
 - 12h/24h format toggle
-- Timezone abbreviation display (CEST, EST, etc.)
-- Timezones are stored **locally** on your machine
+- Timezones are stored **locally** on your machine — nothing is sent to Discord
 
 ## Usage
 
