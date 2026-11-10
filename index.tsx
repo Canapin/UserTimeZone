@@ -10,12 +10,13 @@ import { addProfileBadge, BadgePosition, ProfileBadge, removeProfileBadge } from
 import { definePluginSettings } from "@api/Settings";
 import { getUserSettingLazy } from "@api/UserSettings";
 import ErrorBoundary from "@components/ErrorBoundary";
+import { Text } from "@components/Text";
 // import { Devs } from "@utils/constants";
 import { classes } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import type { Message } from "@vencord/discord-types";
 import { findCssClassesLazy } from "@webpack";
-import { Menu, Modal, openModal, React, SearchableSelect, Text, Tooltip, UserStore } from "@webpack/common";
+import { Menu, Modal, openModal, React, SearchableSelect, Tooltip, UserStore } from "@webpack/common";
 
 const TimestampClasses = findCssClassesLazy("timestampInline", "timestamp");
 const MessageDisplayCompact = getUserSettingLazy("textAndImages", "messageDisplayCompact")!;
@@ -174,7 +175,7 @@ function TimezoneModal({ user, transitionState, onClose }: any) {
             }] : []}
         >
             {preview && (
-                <Text variant="text-sm/normal" style={{ marginBottom: "16px" }}>
+                <Text size="sm" weight="normal" style={{ marginBottom: "16px" }}>
                     Current local time: {preview}
                 </Text>
             )}
@@ -290,11 +291,11 @@ export default definePlugin({
 
         return (
             <>
-                <Text variant="heading-lg/semibold" style={{ marginBottom: "16px" }}>
+                <Text tag="h2" size="lg" weight="semibold" style={{ marginBottom: "16px" }}>
                     User Timezones ({entries.length} configured)
                 </Text>
                 {entries.length === 0 && (
-                    <Text variant="text-sm/normal">
+                    <Text size="sm" weight="normal">
                         No timezones configured yet. Right-click a user and select "Set Timezone" to add one.
                     </Text>
                 )}
@@ -304,8 +305,8 @@ export default definePlugin({
                     const time = formatTime(tz, settings.store.use24h, settings.store.showTzAbbrev);
                     return (
                         <div className="vc-utz-settings-user" key={userId}>
-                            <Text variant="text-sm/normal">{name}</Text>
-                            <Text variant="text-xs/normal" style={{ color: "var(--text-muted)" }}>
+                            <Text size="sm" weight="normal">{name}</Text>
+                            <Text size="xs" weight="normal" style={{ color: "var(--text-muted)" }}>
                                 {tz} — {time}
                             </Text>
                         </div>
